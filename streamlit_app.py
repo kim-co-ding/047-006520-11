@@ -65,7 +65,7 @@ def plot_graph(df_res, df_wt, model_res, model_wt, poly, min_pitch, max_pitch, p
 
     h1, l1 = ax1.get_legend_handles_labels()
     h2, l2 = ax2.get_legend_handles_labels()
-    ax1.legend(h1 + h2, l1 + l2, loc='upper left', fontsize=8)
+    ax1.legend(h1 + h2, l1 + l2, loc='lower left', fontsize=8)
 
     st.pyplot(fig)
 
