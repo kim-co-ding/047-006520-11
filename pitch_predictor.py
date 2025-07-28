@@ -16,11 +16,11 @@ def load_csv(filename):
         return pd.read_csv(filename, encoding=enc)
 
 def train_models(df):
-    df_res = df.dropna(subset=["Pitch(mm)", "Resistance(Ω)"])
+    df_res = df.dropna(subset=["Pitch(mm)", "Resistance(ohm)"])
     df_wt = df.dropna(subset=["Pitch(mm)", "Weight(g)"])
 
     X_res = df_res[["Pitch(mm)"]].values
-    y_res = df_res["Resistance(Ω)"].values
+    y_res = df_res["Resistance(ohm)"].values
 
     X_wt = df_wt[["Pitch(mm)"]].values
     y_wt = df_wt["Weight(g)"].values
@@ -53,7 +53,7 @@ fig, ax1 = plt.subplots(figsize=(14, 6))
 plt.subplots_adjust(left=0.08, right=0.65, top=0.9, bottom=0.2)
 ax2 = ax1.twinx()
 
-ax1.scatter(df_res["Pitch(mm)"], df_res["Resistance(Ω)"], color="blue", marker="x", label="Resistance Data")
+ax1.scatter(df_res["Pitch(mm)"], df_res["Resistance(ohm)"], color="blue", marker="x", label="Resistance Data")
 ax2.scatter(df_wt["Pitch(mm)"], df_wt["Weight(g)"], color="red", marker="x", label="Weight Data")
 
 x_vals = np.linspace(min_pitch, max_pitch, 200).reshape(-1, 1)
@@ -62,11 +62,11 @@ ax1.plot(x_vals, model_res.predict(x_poly), color="blue", linestyle="--", label=
 ax2.plot(x_vals, model_wt.predict(x_poly), color="red", linestyle="--", label="Weight Fit")
 
 ax1.set_xlabel("Pitch (mm)")
-ax1.set_ylabel("Resistance (Ω)", color="blue")
+ax1.set_ylabel("Resistance (ohm)", color="blue")
 ax2.set_ylabel("Weight (g)", color="red")
 plt.title("Quadratic  Regression of Resistance and Weight by Pitch")
 
-res_eq = f"Resistance = {model_res.coef_[2]:.2f}·x² + {model_res.coef_[1]:.2f}·x + {model_res.intercept_:.2f}  (R²={model_res.score(poly.transform(df_res[['Pitch(mm)']]), df_res['Resistance(Ω)']):.3f})"
+res_eq = f"Resistance = {model_res.coef_[2]:.2f}·x² + {model_res.coef_[1]:.2f}·x + {model_res.intercept_:.2f}  (R²={model_res.score(poly.transform(df_res[['Pitch(mm)']]), df_res['Resistance(ohm)']):.3f})"
 wt_eq = f"Weight = {model_wt.coef_[2]:.2f}·x² + {model_wt.coef_[1]:.2f}·x + {model_wt.intercept_:.2f}  (R²={model_wt.score(poly.transform(df_wt[['Pitch(mm)']]), df_wt['Weight(g)']):.3f})"
 
 fig.text(0.7, 0.88, res_eq, color='blue', fontsize=9, ha='left')
@@ -126,7 +126,7 @@ def predict(event):
         idx = np.abs(res_preds - resistance).argmin()
         pitch = pitches[idx][0]
         weight = model_wt.predict(poly.transform([[pitch]]))[0]
-        warn += out_of_range_warning(resistance, df_res["Resistance(Ω)"].min(), df_res["Resistance(Ω)"].max(), "Resistance")
+        warn += out_of_range_warning(resistance, df_res["Resistance(ohm)"].min(), df_res["Resistance(ohm)"].max(), "Resistance")
         result_text.set_text(f"{warn}Estimated:\nPitch = {pitch:.4f}\nWeight = {weight:.2f}")
         res_point.set_offsets([[pitch, resistance]])
         wt_point.set_offsets([[pitch, weight]])
@@ -153,7 +153,7 @@ def predict(event):
         wt_preds = model_wt.predict(poly.transform(filtered))
         weight_pred = np.mean(wt_preds)
         warn += out_of_range_warning(pitch, min_pitch, max_pitch, "Pitch")
-        warn += out_of_range_warning(resistance, df_res["Resistance(Ω)"].min(), df_res["Resistance(Ω)"].max(), "Resistance")
+        warn += out_of_range_warning(resistance, df_res["Resistance(ohm)"].min(), df_res["Resistance(ohm)"].max(), "Resistance")
         result_text.set_text(f"{warn}Predicted:\nWeight = {weight_pred:.2f}")
         res_point.set_offsets([[pitch, resistance]])
         wt_point.set_offsets([[pitch, weight_pred]])
@@ -181,7 +181,7 @@ def predict(event):
         errors = (res_preds - resistance) ** 2 + (wt_preds - weight) ** 2
         best_idx = errors.argmin()
         pitch = pitches[best_idx][0]
-        warn += out_of_range_warning(resistance, df_res["Resistance(Ω)"].min(), df_res["Resistance(Ω)"].max(), "Resistance")
+        warn += out_of_range_warning(resistance, df_res["Resistance(ohm)"].min(), df_res["Resistance(ohm)"].max(), "Resistance")
         warn += out_of_range_warning(weight, df_wt["Weight(g)"].min(), df_wt["Weight(g)"].max(), "Weight")
         result_text.set_text(f"{warn}Estimated:\nPitch = {pitch:.4f}")
         res_point.set_offsets([[pitch, resistance]])
