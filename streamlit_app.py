@@ -44,6 +44,9 @@ if not os.path.exists(DATA_FILE):
     raise FileNotFoundError("data.csv must be in the same folder as this script.")
 
 df = load_csv(DATA_FILE)
+# 컬럼명 변경
+df = df.rename(columns={"Resistance(Ω)": "Resistance(ohm)"})
+
 model_res, model_wt, poly, df_res, df_wt = train_models(df)
 
 min_pitch = df["Pitch(mm)"].dropna().min()
@@ -64,7 +67,7 @@ ax2.plot(x_vals, model_wt.predict(x_poly), color="red", linestyle="--", label="W
 ax1.set_xlabel("Pitch (mm)")
 ax1.set_ylabel("Resistance (ohm)", color="blue")
 ax2.set_ylabel("Weight (g)", color="red")
-plt.title("Quadratic  Regression of Resistance and Weight by Pitch")
+plt.title("Quadratic Regression of Resistance and Weight by Pitch")
 
 res_eq = f"Resistance = {model_res.coef_[2]:.2f}·x² + {model_res.coef_[1]:.2f}·x + {model_res.intercept_:.2f}  (R²={model_res.score(poly.transform(df_res[['Pitch(mm)']]), df_res['Resistance(ohm)']):.3f})"
 wt_eq = f"Weight = {model_wt.coef_[2]:.2f}·x² + {model_wt.coef_[1]:.2f}·x + {model_wt.intercept_:.2f}  (R²={model_wt.score(poly.transform(df_wt[['Pitch(mm)']]), df_wt['Weight(g)']):.3f})"
