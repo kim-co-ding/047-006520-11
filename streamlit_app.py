@@ -1,10 +1,11 @@
+import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import PolynomialFeatures
-from matplotlib.widgets import TextBox, Button
 import os
+from io import BytesIO
 
 def load_csv(filename):
     try:
@@ -39,162 +40,154 @@ def out_of_range_warning(value, min_val, max_val, name):
         return f"⚠️ {name} out of range.\n"
     return ""
 
-DATA_FILE = "data.csv"
-if not os.path.exists(DATA_FILE):
-    raise FileNotFoundError("data.csv must be in the same folder as this script.")
+def plot_graph(df_res, df_wt, model_res, model_wt, poly, min_pitch, max_pitch, pitch=None, res_pred=None, wt_pred=None):
+    fig, ax1 = plt.subplots(figsize=(10, 5))
+    ax2 = ax1.twinx()
 
-df = load_csv(DATA_FILE)
-# 컬럼명 변경
-df = df.rename(columns={"Resistance(Ω)": "Resistance(ohm)"})
+    ax1.scatter(df_res["Pitch(mm)"], df_res["Resistance(ohm)"], color="blue", marker="x", label="Resistance Data")
+    ax2.scatter(df_wt["Pitch(mm)"], df_wt["Weight(g)"], color="red", marker="x", label="Weight Data")
 
-model_res, model_wt, poly, df_res, df_wt = train_models(df)
+    x_vals = np.linspace(min_pitch, max_pitch, 200).reshape(-1, 1)
+    x_poly = poly.transform(x_vals)
+    ax1.plot(x_vals, model_res.predict(x_poly), color="blue", linestyle="--", label="Resistance Fit")
+    ax2.plot(x_vals, model_wt.predict(x_poly), color="red", linestyle="--", label="Weight Fit")
 
-min_pitch = df["Pitch(mm)"].dropna().min()
-max_pitch = df["Pitch(mm)"].dropna().max()
+    if pitch is not None and res_pred is not None and wt_pred is not None:
+        ax1.scatter([pitch], [res_pred], color='blue', s=100, marker='o', label='Predicted Resistance')
+        ax2.scatter([pitch], [wt_pred], color='red', s=100, marker='o', label='Predicted Weight')
 
-fig, ax1 = plt.subplots(figsize=(14, 6))
-plt.subplots_adjust(left=0.08, right=0.65, top=0.9, bottom=0.2)
-ax2 = ax1.twinx()
+    ax1.set_xlabel("Pitch (mm)")
+    ax1.set_ylabel("Resistance (ohm)", color="blue")
+    ax2.set_ylabel("Weight (g)", color="red")
+    ax1.tick_params(axis='y', colors='blue')
+    ax2.tick_params(axis='y', colors='red')
+    plt.title("Quadratic Regression of Resistance and Weight by Pitch")
 
-ax1.scatter(df_res["Pitch(mm)"], df_res["Resistance(ohm)"], color="blue", marker="x", label="Resistance Data")
-ax2.scatter(df_wt["Pitch(mm)"], df_wt["Weight(g)"], color="red", marker="x", label="Weight Data")
+    h1, l1 = ax1.get_legend_handles_labels()
+    h2, l2 = ax2.get_legend_handles_labels()
+    ax1.legend(h1 + h2, l1 + l2, loc='upper left', fontsize=8)
 
-x_vals = np.linspace(min_pitch, max_pitch, 200).reshape(-1, 1)
-x_poly = poly.transform(x_vals)
-ax1.plot(x_vals, model_res.predict(x_poly), color="blue", linestyle="--", label="Resistance Fit")
-ax2.plot(x_vals, model_wt.predict(x_poly), color="red", linestyle="--", label="Weight Fit")
+    st.pyplot(fig)
 
-ax1.set_xlabel("Pitch (mm)")
-ax1.set_ylabel("Resistance (ohm)", color="blue")
-ax2.set_ylabel("Weight (g)", color="red")
-plt.title("Quadratic Regression of Resistance and Weight by Pitch")
+def main():
+    st.title("047-006520-11 Pitch, Resistance, Weight Regression")
 
-res_eq = f"Resistance = {model_res.coef_[2]:.2f}·x² + {model_res.coef_[1]:.2f}·x + {model_res.intercept_:.2f}  (R²={model_res.score(poly.transform(df_res[['Pitch(mm)']]), df_res['Resistance(ohm)']):.3f})"
-wt_eq = f"Weight = {model_wt.coef_[2]:.2f}·x² + {model_wt.coef_[1]:.2f}·x + {model_wt.intercept_:.2f}  (R²={model_wt.score(poly.transform(df_wt[['Pitch(mm)']]), df_wt['Weight(g)']):.3f})"
-
-fig.text(0.7, 0.88, res_eq, color='blue', fontsize=9, ha='left')
-fig.text(0.7, 0.82, wt_eq, color='red', fontsize=9, ha='left')
-
-h1, l1 = ax1.get_legend_handles_labels()
-h2, l2 = ax2.get_legend_handles_labels()
-fig.legend(h1 + h2, l1 + l2, loc='center left', bbox_to_anchor=(0.7, 0.7), fontsize=9)
-
-textbox_pitch = TextBox(plt.axes([0.76, 0.56, 0.2, 0.05]), "Pitch:")
-textbox_res = TextBox(plt.axes([0.76, 0.48, 0.2, 0.05]), "Resistance:")
-textbox_wt = TextBox(plt.axes([0.76, 0.40, 0.2, 0.05]), "Weight:")
-
-axbutton = plt.axes([0.76, 0.30, 0.15, 0.05])
-button = Button(axbutton, "Predict")
-
-result_ax = plt.axes([0.70, 0.20, 0.28, 0.09])
-result_ax.axis("off")
-result_text = result_ax.text(0, 0.5, "", fontsize=10, va="center")
-
-res_point = ax1.scatter([], [], color='blue', s=100, marker='o')
-wt_point = ax2.scatter([], [], color='red', s=100, marker='o')
-
-def predict(event):
-    pitch_str = textbox_pitch.text.strip()
-    res_str = textbox_res.text.strip()
-    wt_str = textbox_wt.text.strip()
-
-    try:
-        pitch = float(pitch_str) if pitch_str else None
-        resistance = float(res_str) if res_str else None
-        weight = float(wt_str) if wt_str else None
-    except ValueError:
-        result_text.set_text("⚠️ Invalid input.\nPlease enter valid numbers.")
-        fig.canvas.draw_idle()
+    DATA_FILE = "data.csv"
+    if not os.path.exists(DATA_FILE):
+        st.error("data.csv must be in the same folder as this script.")
         return
 
-    if not any([pitch_str, res_str, wt_str]):
-        result_text.set_text("⚠️ Please input at least one value.")
-        fig.canvas.draw_idle()
-        return
+    df = load_csv(DATA_FILE)
+    df = df.rename(columns={"Resistance(Ω)": "Resistance(ohm)"})
+
+    model_res, model_wt, poly, df_res, df_wt = train_models(df)
+
+    min_pitch = df["Pitch(mm)"].dropna().min()
+    max_pitch = df["Pitch(mm)"].dropna().max()
+
+    st.markdown(f"**Pitch range:** {min_pitch:.4f} ~ {max_pitch:.4f}")
+
+    pitch_input = st.text_input("Pitch (mm)", "")
+    resistance_input = st.text_input("Resistance (ohm)", "")
+    weight_input = st.text_input("Weight (g)", "")
 
     warn = ""
+    pitch = None
+    resistance = None
+    weight = None
 
-    if pitch is not None and resistance is None and weight is None:
-        x_input = poly.transform([[pitch]])
-        resistance = model_res.predict(x_input)[0]
-        weight = model_wt.predict(x_input)[0]
-        warn += out_of_range_warning(pitch, min_pitch, max_pitch, "Pitch")
-        result_text.set_text(f"{warn}Predicted:\nResistance = {resistance:.2f}\nWeight = {weight:.2f}")
-        res_point.set_offsets([[pitch, resistance]])
-        wt_point.set_offsets([[pitch, weight]])
+    def try_float(s):
+        try:
+            return float(s)
+        except:
+            return None
 
-    elif resistance is not None and pitch is None and weight is None:
-        pitches = np.linspace(min_pitch, max_pitch, 1000).reshape(-1, 1)
-        res_preds = model_res.predict(poly.transform(pitches))
-        idx = np.abs(res_preds - resistance).argmin()
-        pitch = pitches[idx][0]
-        weight = model_wt.predict(poly.transform([[pitch]]))[0]
-        warn += out_of_range_warning(resistance, df_res["Resistance(ohm)"].min(), df_res["Resistance(ohm)"].max(), "Resistance")
-        result_text.set_text(f"{warn}Estimated:\nPitch = {pitch:.4f}\nWeight = {weight:.2f}")
-        res_point.set_offsets([[pitch, resistance]])
-        wt_point.set_offsets([[pitch, weight]])
+    pitch = try_float(pitch_input) if pitch_input else None
+    resistance = try_float(resistance_input) if resistance_input else None
+    weight = try_float(weight_input) if weight_input else None
 
-    elif weight is not None and pitch is None and resistance is None:
-        pitches = np.linspace(min_pitch, max_pitch, 1000).reshape(-1, 1)
-        wt_preds = model_wt.predict(poly.transform(pitches))
-        idx = np.abs(wt_preds - weight).argmin()
-        pitch = pitches[idx][0]
-        resistance = model_res.predict(poly.transform([[pitch]]))[0]
-        warn += out_of_range_warning(weight, df_wt["Weight(g)"].min(), df_wt["Weight(g)"].max(), "Weight")
-        result_text.set_text(f"{warn}Estimated:\nPitch = {pitch:.4f}\nResistance = {resistance:.2f}")
-        res_point.set_offsets([[pitch, resistance]])
-        wt_point.set_offsets([[pitch, weight]])
+    if (pitch_input and pitch is None) or (resistance_input and resistance is None) or (weight_input and weight is None):
+        st.warning("⚠️ Please enter valid numeric values.")
 
-    elif pitch is not None and resistance is not None and weight is None:
-        pitch_candidates = np.linspace(max(min_pitch, pitch-0.005), min(max_pitch, pitch+0.005), 200).reshape(-1, 1)
-        res_preds = model_res.predict(poly.transform(pitch_candidates))
-        close_idx = np.abs(res_preds - resistance) < 0.1
-        filtered = pitch_candidates[close_idx]
-        if len(filtered) == 0:
-            idx_min = np.abs(res_preds - resistance).argmin()
-            filtered = pitch_candidates[idx_min:idx_min+1]
-        wt_preds = model_wt.predict(poly.transform(filtered))
-        weight_pred = np.mean(wt_preds)
-        warn += out_of_range_warning(pitch, min_pitch, max_pitch, "Pitch")
-        warn += out_of_range_warning(resistance, df_res["Resistance(ohm)"].min(), df_res["Resistance(ohm)"].max(), "Resistance")
-        result_text.set_text(f"{warn}Predicted:\nWeight = {weight_pred:.2f}")
-        res_point.set_offsets([[pitch, resistance]])
-        wt_point.set_offsets([[pitch, weight_pred]])
+    if st.button("Predict"):
+        if not any([pitch, resistance, weight]):
+            st.warning("⚠️ Please input at least one value.")
+            return
 
-    elif pitch is not None and weight is not None and resistance is None:
-        pitch_candidates = np.linspace(max(min_pitch, pitch-0.005), min(max_pitch, pitch+0.005), 200).reshape(-1, 1)
-        wt_preds = model_wt.predict(poly.transform(pitch_candidates))
-        close_idx = np.abs(wt_preds - weight) < 0.1
-        filtered = pitch_candidates[close_idx]
-        if len(filtered) == 0:
-            idx_min = np.abs(wt_preds - weight).argmin()
-            filtered = pitch_candidates[idx_min:idx_min+1]
-        res_preds = model_res.predict(poly.transform(filtered))
-        resistance_pred = np.mean(res_preds)
-        warn += out_of_range_warning(pitch, min_pitch, max_pitch, "Pitch")
-        warn += out_of_range_warning(weight, df_wt["Weight(g)"].min(), df_wt["Weight(g)"].max(), "Weight")
-        result_text.set_text(f"{warn}Predicted:\nResistance = {resistance_pred:.2f}")
-        res_point.set_offsets([[pitch, resistance_pred]])
-        wt_point.set_offsets([[pitch, weight]])
+        # 아래는 원래 predict() 함수 로직 간소화 및 streamlit 맞춤 변환
 
-    elif resistance is not None and weight is not None and pitch is None:
-        pitches = np.linspace(min_pitch, max_pitch, 1000).reshape(-1, 1)
-        res_preds = model_res.predict(poly.transform(pitches))
-        wt_preds = model_wt.predict(poly.transform(pitches))
-        errors = (res_preds - resistance) ** 2 + (wt_preds - weight) ** 2
-        best_idx = errors.argmin()
-        pitch = pitches[best_idx][0]
-        warn += out_of_range_warning(resistance, df_res["Resistance(ohm)"].min(), df_res["Resistance(ohm)"].max(), "Resistance")
-        warn += out_of_range_warning(weight, df_wt["Weight(g)"].min(), df_wt["Weight(g)"].max(), "Weight")
-        result_text.set_text(f"{warn}Estimated:\nPitch = {pitch:.4f}")
-        res_point.set_offsets([[pitch, resistance]])
-        wt_point.set_offsets([[pitch, weight]])
+        if pitch is not None and resistance is None and weight is None:
+            x_input = poly.transform([[pitch]])
+            resistance = model_res.predict(x_input)[0]
+            weight = model_wt.predict(x_input)[0]
+            warn += out_of_range_warning(pitch, min_pitch, max_pitch, "Pitch")
+            st.success(f"{warn}Predicted:\nResistance = {resistance:.2f}\nWeight = {weight:.2f}")
+            plot_graph(df_res, df_wt, model_res, model_wt, poly, min_pitch, max_pitch, pitch, resistance, weight)
 
-    else:
-        result_text.set_text("⚠️ Please enter only one or two values.")
+        elif resistance is not None and pitch is None and weight is None:
+            pitches = np.linspace(min_pitch, max_pitch, 1000).reshape(-1, 1)
+            res_preds = model_res.predict(poly.transform(pitches))
+            idx = np.abs(res_preds - resistance).argmin()
+            pitch = pitches[idx][0]
+            weight = model_wt.predict(poly.transform([[pitch]]))[0]
+            warn += out_of_range_warning(resistance, df_res["Resistance(ohm)"].min(), df_res["Resistance(ohm)"].max(), "Resistance")
+            st.success(f"{warn}Estimated:\nPitch = {pitch:.4f}\nWeight = {weight:.2f}")
+            plot_graph(df_res, df_wt, model_res, model_wt, poly, min_pitch, max_pitch, pitch, resistance, weight)
 
-    fig.canvas.draw_idle()
+        elif weight is not None and pitch is None and resistance is None:
+            pitches = np.linspace(min_pitch, max_pitch, 1000).reshape(-1, 1)
+            wt_preds = model_wt.predict(poly.transform(pitches))
+            idx = np.abs(wt_preds - weight).argmin()
+            pitch = pitches[idx][0]
+            resistance = model_res.predict(poly.transform([[pitch]]))[0]
+            warn += out_of_range_warning(weight, df_wt["Weight(g)"].min(), df_wt["Weight(g)"].max(), "Weight")
+            st.success(f"{warn}Estimated:\nPitch = {pitch:.4f}\nResistance = {resistance:.2f}")
+            plot_graph(df_res, df_wt, model_res, model_wt, poly, min_pitch, max_pitch, pitch, resistance, weight)
 
-button.on_clicked(predict)
+        elif pitch is not None and resistance is not None and weight is None:
+            pitch_candidates = np.linspace(max(min_pitch, pitch-0.005), min(max_pitch, pitch+0.005), 200).reshape(-1, 1)
+            res_preds = model_res.predict(poly.transform(pitch_candidates))
+            close_idx = np.abs(res_preds - resistance) < 0.1
+            filtered = pitch_candidates[close_idx]
+            if len(filtered) == 0:
+                idx_min = np.abs(res_preds - resistance).argmin()
+                filtered = pitch_candidates[idx_min:idx_min+1]
+            wt_preds = model_wt.predict(poly.transform(filtered))
+            weight_pred = np.mean(wt_preds)
+            warn += out_of_range_warning(pitch, min_pitch, max_pitch, "Pitch")
+            warn += out_of_range_warning(resistance, df_res["Resistance(ohm)"].min(), df_res["Resistance(ohm)"].max(), "Resistance")
+            st.success(f"{warn}Predicted:\nWeight = {weight_pred:.2f}")
+            plot_graph(df_res, df_wt, model_res, model_wt, poly, min_pitch, max_pitch, pitch, resistance, weight_pred)
 
-plt.show()
+        elif pitch is not None and weight is not None and resistance is None:
+            pitch_candidates = np.linspace(max(min_pitch, pitch-0.005), min(max_pitch, pitch+0.005), 200).reshape(-1, 1)
+            wt_preds = model_wt.predict(poly.transform(pitch_candidates))
+            close_idx = np.abs(wt_preds - weight) < 0.1
+            filtered = pitch_candidates[close_idx]
+            if len(filtered) == 0:
+                idx_min = np.abs(wt_preds - weight).argmin()
+                filtered = pitch_candidates[idx_min:idx_min+1]
+            res_preds = model_res.predict(poly.transform(filtered))
+            resistance_pred = np.mean(res_preds)
+            warn += out_of_range_warning(pitch, min_pitch, max_pitch, "Pitch")
+            warn += out_of_range_warning(weight, df_wt["Weight(g)"].min(), df_wt["Weight(g)"].max(), "Weight")
+            st.success(f"{warn}Predicted:\nResistance = {resistance_pred:.2f}")
+            plot_graph(df_res, df_wt, model_res, model_wt, poly, min_pitch, max_pitch, pitch, resistance_pred, weight)
+
+        elif resistance is not None and weight is not None and pitch is None:
+            pitches = np.linspace(min_pitch, max_pitch, 1000).reshape(-1, 1)
+            res_preds = model_res.predict(poly.transform(pitches))
+            wt_preds = model_wt.predict(poly.transform(pitches))
+            errors = (res_preds - resistance) ** 2 + (wt_preds - weight) ** 2
+            best_idx = errors.argmin()
+            pitch = pitches[best_idx][0]
+            warn += out_of_range_warning(resistance, df_res["Resistance(ohm)"].min(), df_res["Resistance(ohm)"].max(), "Resistance")
+            warn += out_of_range_warning(weight, df_wt["Weight(g)"].min(), df_wt["Weight(g)"].max(), "Weight")
+            st.success(f"{warn}Estimated:\nPitch = {pitch:.4f}")
+            plot_graph(df_res, df_wt, model_res, model_wt, poly, min_pitch, max_pitch, pitch, resistance, weight)
+
+        else:
+            st.warning("⚠️ Please enter only one or two values.")
+
+if __name__ == "__main__":
+    main()
